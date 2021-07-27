@@ -102,7 +102,7 @@ def gather_exportable_objects(self, context,
         if ob.type != 'MESH':
             continue
 
-        if use_selection and not ob.select:
+        if use_selection and not ob.select_get():
             continue
 
         if len(ob.material_slots) < 1:
@@ -288,9 +288,12 @@ class ExportMesh(object):
                 colors = [(1.0, 1.0, 1.0, alpha_default)] * 4
             for i, loop_index in enumerate(polygon.loop_indices):
                 loop = self.mesh.loops[loop_index]
-                uv = tuple(uv_layer.data[loop_index].uv)
+                uv = uv_layer.data[loop_index].uv
                 vert = XModel.FaceVertex(
-                    loop.vertex_index, loop.normal, colors[i], uv)
+                    loop.vertex_index,
+                    loop.normal,
+                    colors[i],
+                    (uv.x, 1.0 - uv.y))
                 face.indices[i] = vert
 
             # Fix winding order (again)
@@ -468,8 +471,9 @@ def save_model(self, context, filepath, armature, objects,
 
         # to_mesh() applies enabled modifiers only
         try:
-            mesh = ob.to_mesh(
-                scene=scene, apply_modifiers=True, settings=modifier_quality)
+            # NOTE There's no way to get a 'render' depsgraph for now
+            depsgraph = context.evaluated_depsgraph_get()
+            mesh = ob.evaluated_get(depsgraph).to_mesh()
         except RuntimeError:
             mesh = None
 
@@ -533,10 +537,10 @@ def save_model(self, context, filepath, armature, objects,
                 matrix = [(1, 0, 0), (0, 1, 0), (0, 0, 1)]
                 offset = (0, 0, 0)
             else:
-                mtx = (armature_matrix *
+                mtx = (armature_matrix @
                        bone.matrix_local).to_3x3().transposed()
                 matrix = [tuple(mtx[0]), tuple(mtx[1]), tuple(mtx[2])]
-                offset = (armature_matrix * bone.head_local) * global_scale
+                offset = (armature_matrix @ bone.head_local) * global_scale
 
             model_bone.offset = tuple(offset)
             model_bone.matrix = matrix
@@ -585,5 +589,5 @@ def save_model(self, context, filepath, armature, objects,
     for mesh in meshes:
         mesh.clear()
 
-    # Do we need this scene.update?
-    context.scene.update()
+    # Do we need this view_layer.update?
+    context.view_layer.update()

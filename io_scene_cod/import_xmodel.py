@@ -77,7 +77,7 @@ def join_armatures(skel1_ob, skel2_ob, skel2_mesh_obs):
 
     # Ensure that the context is correct
     bpy.context.scene.objects.active = skel1_ob
-    skel1_ob.select = True
+    skel1_ob.select_set(state=True)
 
     bpy.ops.object.mode_set(mode='EDIT')
     ebs = skel1_ob.data.edit_bones
@@ -151,6 +151,7 @@ def load(self, context,
     load_images = True
 
     scene = bpy.context.scene
+    view_layer = bpy.context.view_layer
 
     # Load the model
     model_name = os.path.basename(filepath)
@@ -205,8 +206,10 @@ def load(self, context,
                     elif image_name in bpy.data.images:
                         image = bpy.data.images[image_name]
                     else:
-                        image = None
+                        image = material_images[image_name]
 
+                    # DEPRECATED
+                    '''
                     # Create the texture - We exclude the extension in the
                     #  texture name
                     texture_name = os.path.splitext(image_name)[0]
@@ -226,7 +229,10 @@ def load(self, context,
                         slot.use_map_alpha = False
                         if image_type == 'normal':
                             slot.normal_factor = True
+                    '''
 
+                # DEPRECATED
+                '''
                 # Add the deferred_textures
                 for tex in deferred_textures:
                     slot = mat.texture_slots.add()
@@ -246,6 +252,7 @@ def load(self, context,
                         #        highlights show up regardless
                         mat.specular_alpha = 0.0
                     mat.alpha = 0
+                '''
 
         else:
             if mat not in materials:
@@ -266,9 +273,7 @@ def load(self, context,
 
         # Add Vertex Color Layer
         if use_vertex_colors:
-            # The first layer added here will be the active one for this mesh
             vert_color_layer = bm.loops.layers.color.new("Color")
-            vert_alpha_layer = bm.loops.layers.color.new("Alpha")
 
         # Add Verts
         for vert in sub_mesh.verts:
@@ -310,8 +315,8 @@ def load(self, context,
                 loop[uv_layer].uv = uv
                 # Vertex Colors
                 if use_vertex_colors:
-                    loop[vert_color_layer] = face_index_loop.color[:3]
-                    loop[vert_alpha_layer] = [face_index_loop.color[3]] * 3
+                    loop[vert_color_layer] = face_index_loop.color
+
             used_faces.append(face)
 
         unused_faces = []
@@ -391,7 +396,7 @@ def load(self, context,
             if material_usage_counts[material_usage_index] == 0:
                 # Note: update_data must be True, otherwise - after the first
                 #  material is removed, the indices are invalidated
-                mesh.materials.pop(index=material_index, update_data=True)
+                mesh.materials.pop(index=material_index)
             else:
                 material_index += 1
             material_usage_index += 1
@@ -421,7 +426,12 @@ def load(self, context,
 
             mesh.normals_split_custom_set(tuple(zip(*(iter(clnors),) * 3)))
             mesh.use_auto_smooth = True
-            mesh.show_edge_sharp = True
+
+            # This was used to highlight sharp edges in legacy versions
+            # In Blender 2.8x, it uses the View3D Overlay API - but since
+            # it's enabled by default in those versions, we don't need any
+            # special code
+            # mesh.show_edge_sharp = True
 
         else:
             mesh.validate()
@@ -442,13 +452,13 @@ def load(self, context,
         obj = bpy.data.objects.new(obj_name, mesh)
         mesh_objs.append(obj)
 
-        scene.objects.link(obj)
-        scene.objects.active = obj
+        scene.collection.objects.link(obj)
+        view_layer.objects.active = obj
 
         # Create Vertex Groups
         # These automatically weight the verts based on the deform groups
         for bone in model.bones:
-            obj.vertex_groups.new(bone.name.lower())
+            obj.vertex_groups.new(name=bone.name.lower())
 
         # Assign the texture images to the current mesh (for Texture view)
         if load_images:
@@ -460,22 +470,25 @@ def load(self, context,
                     if color_map in bpy.data.images:
                         material_image_map[index] = bpy.data.images[color_map]
 
+            # DEPRECATED
+            '''
             # Assign the image for each face
             uv_faces = mesh.uv_textures[0].data
             for index, face in enumerate(used_faces):
                 uv_faces[index].image = material_image_map[face.material_id]
+            '''
 
     if use_armature:
         # Create the skeleton
         armature = bpy.data.armatures.new("%s_amt" % model.name)
-        armature.draw_type = "STICK"
+        armature.display_type = "STICK"
 
         skel_obj = bpy.data.objects.new("%s_skel" % model.name, armature)
-        skel_obj.show_x_ray = True
+        skel_obj.show_in_front = True
 
         # Add the skeleton object to the scene
-        scene.objects.link(skel_obj)
-        scene.objects.active = skel_obj
+        scene.collection.objects.link(skel_obj)
+        view_layer.objects.active = skel_obj
 
         bpy.ops.object.mode_set(mode='EDIT')
 
@@ -540,12 +553,12 @@ def load(self, context,
             skel_obj.location = (0, -1, 0)
 
             # Is this necessary?
-            bpy.context.scene.update()
+            bpy.context.view_layer.update()
 
             # Merge the skeletons together
             if merge_skeleton:
                 join_armatures(skel_old, skel_obj, mesh_objs)
                 bpy.ops.object.mode_set(mode='POSE')
 
-    # scene.update()
+    # view_layer.update()
     bpy.ops.object.mode_set(mode='OBJECT')
